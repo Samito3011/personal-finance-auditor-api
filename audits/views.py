@@ -5,6 +5,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .models import Transaction
 from .serializers import TransactionSerializer
@@ -13,6 +14,7 @@ from .serializers import TransactionSerializer
 class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [IsAuthenticated]
+
     def get_queryset(self):
         queryset = Transaction.objects.filter(
             user=self.request.user
@@ -22,10 +24,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
         category = self.request.query_params.get("category")
 
         if transaction_type:
-            queryset = queryset.filter(transaction_type=transaction_type)
+            queryset = queryset.filter(
+                transaction_type=transaction_type
+            )
 
         if category:
-            queryset = queryset.filter(category=category)
+            queryset = queryset.filter(
+                category=category
+            )
 
         return queryset
 
@@ -34,16 +40,29 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
 
 class InsightsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Financial insights for the authenticated user."
+            )
+        }
+    )
     def get(self, request):
+        transactions = Transaction.objects.filter(
+            user=request.user
+        )
+
         total_income = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="income")
             .aggregate(total=Sum("amount"))["total"]
             or Decimal("0.00")
         )
 
         total_expenses = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .aggregate(total=Sum("amount"))["total"]
             or Decimal("0.00")
@@ -52,7 +71,7 @@ class InsightsView(APIView):
         balance = total_income - total_expenses
 
         expense_categories = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .values("category")
             .annotate(total=Sum("amount"))
@@ -70,7 +89,7 @@ class InsightsView(APIView):
             "total_income": total_income,
             "total_expenses": total_expenses,
             "balance": balance,
-            "total_transactions": Transaction.objects.count(),
+            "total_transactions": transactions.count(),
             "highest_spending_category": highest_category,
             "highest_spending_amount": highest_category_amount,
             "financial_status": (
@@ -84,9 +103,22 @@ class InsightsView(APIView):
 
 
 class CategoryAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Spending analysis by category for the authenticated user."
+            )
+        }
+    )
     def get(self, request):
+        transactions = Transaction.objects.filter(
+            user=request.user
+        )
+
         expenses = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .values("category")
             .annotate(total=Sum("amount"))
@@ -94,7 +126,7 @@ class CategoryAnalysisView(APIView):
         )
 
         total_expenses = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .aggregate(total=Sum("amount"))["total"]
             or Decimal("0.00")
@@ -132,9 +164,22 @@ class CategoryAnalysisView(APIView):
 
 
 class AuditAlertsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Audit alerts for the authenticated user's transactions."
+            )
+        }
+    )
     def get(self, request):
+        transactions = Transaction.objects.filter(
+            user=request.user
+        )
+
         expenses = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .values("category")
             .annotate(total=Sum("amount"))
@@ -142,7 +187,7 @@ class AuditAlertsView(APIView):
         )
 
         total_expenses = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .aggregate(total=Sum("amount"))["total"]
             or Decimal("0.00")
@@ -177,12 +222,22 @@ class AuditAlertsView(APIView):
 
 
 class LargeTransactionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Large expense transactions for the authenticated user."
+            )
+        }
+    )
     def get(self, request):
         threshold = Decimal("100000.00")
 
         transactions = (
             Transaction.objects
             .filter(
+                user=request.user,
                 transaction_type="expense",
                 amount__gte=threshold
             )
@@ -209,10 +264,22 @@ class LargeTransactionView(APIView):
 
 
 class UnusualTransactionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Unusual transactions based on the user's average expense."
+            )
+        }
+    )
     def get(self, request):
         expenses = (
             Transaction.objects
-            .filter(transaction_type="expense")
+            .filter(
+                user=request.user,
+                transaction_type="expense"
+            )
             .order_by("-amount")
         )
 
@@ -223,9 +290,13 @@ class UnusualTransactionView(APIView):
                 "total_unusual_transactions": 0,
             })
 
+        total_expense_amount = (
+            expenses.aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
         average_expense = (
-            expenses.aggregate(average=Sum("amount"))["average"]
-            / expenses.count()
+            total_expense_amount / expenses.count()
         )
 
         unusual_transactions = []
@@ -254,11 +325,24 @@ class UnusualTransactionView(APIView):
 
 
 class AuditSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Overall audit summary and risk assessment for the authenticated user."
+            )
+        }
+    )
     def get(self, request):
-        total_transactions = Transaction.objects.count()
+        transactions = Transaction.objects.filter(
+            user=request.user
+        )
+
+        total_transactions = transactions.count()
 
         total_expenses = (
-            Transaction.objects
+            transactions
             .filter(transaction_type="expense")
             .aggregate(total=Sum("amount"))["total"]
             or Decimal("0.00")
@@ -266,7 +350,7 @@ class AuditSummaryView(APIView):
 
         # Large transactions
         large_transaction_count = (
-            Transaction.objects
+            transactions
             .filter(
                 transaction_type="expense",
                 amount__gte=Decimal("100000.00")
@@ -276,7 +360,7 @@ class AuditSummaryView(APIView):
 
         # Duplicate transactions
         duplicate_groups = (
-            Transaction.objects
+            transactions
             .values(
                 "transaction_type",
                 "amount",
@@ -291,7 +375,7 @@ class AuditSummaryView(APIView):
         duplicate_group_count = duplicate_groups.count()
 
         # Unusual transactions
-        expenses = Transaction.objects.filter(
+        expenses = transactions.filter(
             transaction_type="expense"
         )
 
@@ -312,7 +396,7 @@ class AuditSummaryView(APIView):
 
         if total_expenses > 0:
             categories = (
-                Transaction.objects
+                transactions
                 .filter(transaction_type="expense")
                 .values("category")
                 .annotate(total=Sum("amount"))
@@ -353,9 +437,22 @@ class AuditSummaryView(APIView):
 
 
 class DuplicateTransactionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="Potential duplicate transactions for the authenticated user."
+            )
+        }
+    )
     def get(self, request):
+        transactions = Transaction.objects.filter(
+            user=request.user
+        )
+
         duplicate_groups = (
-            Transaction.objects
+            transactions
             .values(
                 "transaction_type",
                 "amount",
@@ -371,8 +468,8 @@ class DuplicateTransactionView(APIView):
         duplicates = []
 
         for group in duplicate_groups:
-            transactions = (
-                Transaction.objects
+            matching_transactions = (
+                transactions
                 .filter(
                     transaction_type=group["transaction_type"],
                     amount=group["amount"],
@@ -397,7 +494,7 @@ class DuplicateTransactionView(APIView):
                 "description": group["description"],
                 "transaction_date": group["transaction_date"],
                 "count": group["count"],
-                "transactions": list(transactions),
+                "transactions": list(matching_transactions),
                 "severity": "High",
                 "message": "Potential duplicate transaction detected.",
             })
